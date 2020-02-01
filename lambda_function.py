@@ -15,7 +15,7 @@ def convert_message(message):
     message['From'] = '"{}" <{}>'.format(from_header, origin_address)
     message['Return-Path'] = '"{}" <{}>'.format(from_header, origin_address)
     
-    # remove 'DKIM-Signature:' header
+    # remove 'DKIM-Signature:' header to prevent "InvalidParameterValue: Duplicate header 'DKIM-Signature'" error.
     del message['DKIM-Signature']
     
     # remove 'Sender:' header

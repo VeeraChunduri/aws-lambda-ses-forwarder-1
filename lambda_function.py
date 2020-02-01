@@ -1,37 +1,35 @@
 import boto3
 import re
+import email
 
-origin_address = b'host@domain.com'
-forward_address = b'host@domain.com'
-ses_region = 'region_Name'
+origin_address = 'host@domain.com'
+forward_address = 'host@domain.com'
+ses_region = 'region_name'
 s3_bucket = 'bucket_name'
 
-def parse_mail(message):
-    from_name = 'No Name'
+def convert_message(message):
+    # replace 'From:' and 'Return-Path:' header
+    from_header = message['From'].replace('"', '')
+    del message['From']
+    del message['Return-Path']
+    message['From'] = '"{}" <{}>'.format(from_header, origin_address)
+    message['Return-Path'] = '"{}" <{}>'.format(from_header, origin_address)
     
-    pattern = re.compile(b'^From:\s*(.+?)[\r\n]', re.MULTILINE)
-    search = re.search(pattern, message)
-    if search:
-        from_name = search.group(1).replace(b'"', b'')
-    message = message.replace(origin_address, forward_address)
+    # remove 'DKIM-Signature:' header
+    del message['DKIM-Signature']
     
-    pattern = re.compile(b'^DKIM-Signature: (.*[\r\n]+)(\t.*[\r\n]+)*', re.MULTILINE)
-    iter = re.finditer(pattern, message)
-    for find in iter:
-        if b'amazonses.com' not in find.group():
-            message = message.replace(find.group(), b'')
-
-    message = re.sub(b'^From:\s*.+?[\r\n]', b'From: "%s" <%s>' % (from_name, origin_address), message, flags=re.MULTILINE)
-    message = re.sub(b'^Return-Path:\s*.+?[\r\n]', b'Return-Path: "%s" <%s>' % (from_name, origin_address), message, flags=re.MULTILINE)
+    # remove 'Sender:' header
+    del message['Sender']
+ 
     return message
 
 def send_mail(message):
     ses = boto3.client('ses', region_name=ses_region)
     
     ses.send_raw_email(
-        Source = forward_address.decode(),
-        Destinations = [forward_address.decode()],
-        RawMessage = {'Data': message}
+        Source = forward_address,
+        Destinations = [forward_address],
+        RawMessage = {'Data': message.as_bytes()}
     )
 
 def lambda_handler(event, context):
@@ -44,7 +42,8 @@ def lambda_handler(event, context):
             Key = s3_key
         )
         message = response['Body'].read()
-        message = parse_mail(message)
+        message = email.message_from_bytes(message)
+        message = convert_message(message)
         send_mail(message)
 
     except Exception as e:
